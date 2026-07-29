@@ -1,0 +1,5 @@
+# WorkBuddy 签到助手校准偏移 (相对窗口原点的偏移; 运行时 CG = 当前窗口原点 + 相对偏移)
+ENTRY_REL_X=32
+ENTRY_REL_Y=766
+BTN_REL_X=95
+BTN_REL_Y=368
