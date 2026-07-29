@@ -1,0 +1,11 @@
+# ---- Runtime artifacts from the workbuddy-checkin skill ----
+# These are generated every time the check-in script runs and must NOT be committed.
+snapshot/
+checkin.log
+
+# ---- macOS / editor junk ----
+.DS_Store
+*.swp
+
+# NOTE: the compiled binary `scripts/wbclick` and the calibration file
+# `scripts/.wbcheckin.offsets` are intentional deliverables and are NOT ignored.
