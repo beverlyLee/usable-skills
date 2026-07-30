@@ -1,0 +1,25 @@
+# Python 字节码 / 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 运行日志（本地产物，含敏感发放记录）
+scripts/daily_issue.log
+*.log
+
+# 本地打包 / 元数据
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
