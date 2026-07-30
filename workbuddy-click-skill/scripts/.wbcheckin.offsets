@@ -1,5 +1,9 @@
 # WorkBuddy 签到助手校准偏移 (相对窗口原点的偏移; 运行时 CG = 当前窗口原点 + 相对偏移)
-ENTRY_REL_X=32
-ENTRY_REL_Y=766
-BTN_REL_X=95
-BTN_REL_Y=368
+# 2026-07-30: 适配 v5.3.5 新版 UI
+#   流程: 1) 点击左下角头像打开用户菜单; 2) 点击菜单内"Buddy 加油站"; 3) 点击卡片"立即领取".
+AVATAR_REL_X=59
+AVATAR_REL_Y=759
+MENU_REL_X=75
+MENU_REL_Y=330
+BTN_REL_X=80
+BTN_REL_Y=730

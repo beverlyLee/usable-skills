@@ -3,11 +3,17 @@
 # WorkBuddy 每日签到领取助手  (重构版 v2)
 # -----------------------------------------------------------------------------
 # 思路: macOS 桌面自动化 = AppleScript(激活+定位窗口) + screencapture(区域截图)
-#       + wbclick(CoreGraphics 绝对坐标点击) + 图像差分/饱和度判定(无 OCR).
+#       + wbclick(CoreGraphics 绝对坐标点击) + 图像差分/左侧卡片 OCR 判定.
+#
+# 流程(v5.3.5 新版):
+#   1. 点击左下角用户头像, 打开用户菜单.
+#   2. 点击菜单内"Buddy 加油站", 打开签到卡片.
+#   3. 若卡片显示"立即领取"则点击; 若显示"今日已领/已领取/已领X天"则跳过.
+#   4. 点击后通过卡片关闭或状态变化确认领取成功.
 #
 # 为什么不用"按名点击 UI 树":
 #   WorkBuddy 是 Electron 应用, 其对话区是 WebView, 不向 macOS 辅助功能树
-#   暴露"立即领取"按钮, 按名点击必然失败. 改用"坐标点击 + 图像差分/饱和度判定(无 OCR)".
+#   暴露"立即领取"按钮, 按名点击必然失败. 改用"坐标点击 + 图像差分/左侧卡片 OCR".
 #
 # 坐标空间: AppleScript 窗口 position 与 wbclick 同为 CoreGraphics「事件坐标」
 #   (原点主屏左上, y 向下, 跨多屏, 负坐标=副屏), 无需 y 翻转.
@@ -28,9 +34,9 @@
 # 用法:
 #   bash workbuddy-checkin.sh            # 执行一次签到领取 (严格模式: 未确认领取即判失败)
 #   bash workbuddy-checkin.sh debug      # 仅诊断: 打印窗口/坐标/弹框状态, 不点击
-#   bash workbuddy-checkin.sh where-entry# 校准头像: 先把鼠标悬停在"打开头像"的控件上, 再运行(免回车)
-#   bash workbuddy-checkin.sh where      # 校准按钮: 先点开签到弹框, 鼠标悬停"立即领取", 再运行(免回车)
-#   bash workbuddy-checkin.sh probe      # 自动扫描网格定位头像热区(成功才会写入 offsets)
+#   bash workbuddy-checkin.sh where-entry# 校准入口: 先把鼠标悬停在左侧"Buddy 加油站"菜单上, 再运行(免回车)
+#   bash workbuddy-checkin.sh where      # 校准按钮: 先点开 Buddy 加油站卡片, 鼠标悬停"立即领取", 再运行(免回车)
+#   bash workbuddy-checkin.sh probe      # 自动扫描网格定位"Buddy 加油站"菜单热区(成功才会写入 offsets)
 #
 # ⚠️ 重要: 本脚本严格模式——只有"确认已领取(claimed)"才返回成功(退出码 0)。
 #    若头像点击后弹框未打开, 或点击领取后未确认, 一律返回失败(退出码 1)并提示校准,
@@ -52,18 +58,20 @@ WIN_X=42; WIN_Y=108; WIN_W=1200; WIN_H=800
 SCALE=2   # 截图像素 / CSS 点, 运行时会按实际截图尺寸重算
 
 # ---------- 弹框状态判定(替代 OCR) ----------
-POPUP_BASELINE=""        # 弹框关闭基线截图路径, 由 main 在点击头像前设置
-DIFF_OPEN_TH=0.012       # 左下区域差分均值(归一 0..1) > 此值 => 弹框已打开(实测: 开=0.029, 关≈0.0003)
-SAT_CLAIMED_TH=0.10      # 按钮区平均饱和度(归一 0..1) > 此值 => 亮色"立即领取"(unclaimed); 否则灰色"今日已领"(claimed). 实测 claimed≈0.03
+POPUP_BASELINE=""        # 卡片关闭基线截图路径, 由 main 在点击头像前设置
+DIFF_OPEN_TH=0.012       # 左下区域差分均值(归一 0..1) > 此值 => 卡片已打开(实测: 开=0.029, 关≈0.0003)
 
 # ---------- 相对窗口原点的偏移(运行时 CG = 当前窗口原点 + 相对偏移) ----------
-# 初值来源:
-#   ENTRY_REL 由用户 where-entry 悬停头像校准(窗口 345|-977 时绝对 379|-216 -> 相对 34|761)
-#   BTN_REL   由存档真实弹框截图 OCR 校准(按钮像素 1045|996 -> 相对窗口 522|498)
-DEF_ENTRY_REL_X=32;  DEF_ENTRY_REL_Y=766
-DEF_BTN_REL_X=95;    DEF_BTN_REL_Y=368
-ENTRY_REL_X=$DEF_ENTRY_REL_X; ENTRY_REL_Y=$DEF_ENTRY_REL_Y
-BTN_REL_X=$DEF_BTN_REL_X;     BTN_REL_Y=$DEF_BTN_REL_Y
+# 初值来源(2026-07-30 版本 v5.3.5):
+#   AVATAR_REL  左下角用户头像中心, 用于打开用户菜单, 相对窗口约 59|759
+#   MENU_REL    用户菜单内"Buddy 加油站"项中心, 相对窗口约 75|330
+#   BTN_REL     Buddy 加油站卡片内"立即领取"按钮中心, 相对窗口约 80|730
+DEF_AVATAR_REL_X=59; DEF_AVATAR_REL_Y=759
+DEF_MENU_REL_X=75;   DEF_MENU_REL_Y=330
+DEF_BTN_REL_X=80;    DEF_BTN_REL_Y=730
+AVATAR_REL_X=$DEF_AVATAR_REL_X; AVATAR_REL_Y=$DEF_AVATAR_REL_Y
+MENU_REL_X=$DEF_MENU_REL_X;     MENU_REL_Y=$DEF_MENU_REL_Y
+BTN_REL_X=$DEF_BTN_REL_X;       BTN_REL_Y=$DEF_BTN_REL_Y
 
 # 旧版绝对坐标格式兼容标记
 LEGACY_ABS=0
@@ -81,11 +89,15 @@ load_offsets() {
   while IFS='=' read -r k v; do
     [ -z "${k:-}" ] && continue
     case "$k" in
-      ENTRY_REL_X) ENTRY_REL_X="$v" ;;
-      ENTRY_REL_Y) ENTRY_REL_Y="$v" ;;
-      BTN_REL_X)   BTN_REL_X="$v"   ;;
-      BTN_REL_Y)   BTN_REL_Y="$v"   ;;
-      ENTRY_X)     LEGACY_ABS=1     ;;   # 旧绝对格式存在
+      AVATAR_REL_X) AVATAR_REL_X="$v" ;;
+      AVATAR_REL_Y) AVATAR_REL_Y="$v" ;;
+      MENU_REL_X)   MENU_REL_X="$v"   ;;
+      MENU_REL_Y)   MENU_REL_Y="$v"   ;;
+      BTN_REL_X)    BTN_REL_X="$v"    ;;
+      BTN_REL_Y)    BTN_REL_Y="$v"    ;;
+      ENTRY_REL_X)  MENU_REL_X="$v"   ;;   # 兼容 v2 旧名: ENTRY_REL 曾代表菜单项
+      ENTRY_REL_Y)  MENU_REL_Y="$v"   ;;
+      ENTRY_X)      LEGACY_ABS=1      ;;   # 旧绝对格式存在
     esac
   done < "$OFFSETS_FILE"
 }
@@ -99,8 +111,9 @@ migrate_legacy() {
   ay=$(grep '^ENTRY_Y=' "$OFFSETS_FILE" | cut -d= -f2)
   bx=$(grep '^BTN_X='   "$OFFSETS_FILE" | cut -d= -f2)
   by=$(grep '^BTN_Y='   "$OFFSETS_FILE" | cut -d= -f2)
-  [ -n "$ax" ] && ENTRY_REL_X=$((ax - WIN_X))
-  [ -n "$ay" ] && ENTRY_REL_Y=$((ay - WIN_Y))
+  # 旧绝对格式对应的是头像入口, 迁移为 AVATAR_REL
+  [ -n "$ax" ] && AVATAR_REL_X=$((ax - WIN_X))
+  [ -n "$ay" ] && AVATAR_REL_Y=$((ay - WIN_Y))
   if [ -n "$bx" ] && [ -n "$by" ]; then
     brx=$((bx - WIN_X)); bry=$((by - WIN_Y))
     if [ "$brx" -ge 0 ] && [ "$brx" -le "$WIN_W" ] && [ "$bry" -ge 0 ] && [ "$bry" -le "$WIN_H" ]; then
@@ -117,8 +130,12 @@ migrate_legacy() {
 save_offsets() {
   cat > "$OFFSETS_FILE" <<EOF
 # WorkBuddy 签到助手校准偏移 (相对窗口原点的偏移; 运行时 CG = 当前窗口原点 + 相对偏移)
-ENTRY_REL_X=$ENTRY_REL_X
-ENTRY_REL_Y=$ENTRY_REL_Y
+# 流程 v5.3.5: 点击左侧"Buddy 加油站"(MENU_REL) 打开卡片, 再点"立即领取"(BTN_REL).
+# AVATAR_REL 为左下角用户头像(备用/旧流程), 当前主流程不使用.
+AVATAR_REL_X=$AVATAR_REL_X
+AVATAR_REL_Y=$AVATAR_REL_Y
+MENU_REL_X=$MENU_REL_X
+MENU_REL_Y=$MENU_REL_Y
 BTN_REL_X=$BTN_REL_X
 BTN_REL_Y=$BTN_REL_Y
 EOF
@@ -188,27 +205,36 @@ capture() {
 
 click_cg() { "$WB_CLICK" "$1" "$2"; }
 
-# 弹框状态判定: 图像差分(是否打开) + OCR(已领/未领关键词) + 按钮饱和度兜底.
+# 弹框状态判定: 图像差分(是否打开) + 左侧卡片 OCR(已领取关键词).
 #   -> claimed | unclaimed | none
 # 依赖全局 POPUP_BASELINE(弹框关闭基线截图). 缺失时无法差分, 退化为返回 none.
-# 所有量纲均归一化到 0..1(用 max 归一), 与 ImageMagick 量子深度(Q8/Q16)无关.
 #
-# ⚠️ 设计约束: 对话本身也会提到"加油站/领取", 因此单凭 OCR 关键词不能判定弹框打开,
-#    必须以"底部左侧区域差分"作为弹框打开的主信号; OCR 仅用于"已领取"强确认.
+# ⚠️ 设计约束:
+#   - 对话区本身可能提到"已领取/领取"等词, 因此"已领取"OCR 必须限定在左侧卡片区域,
+#     避免把对话文字误判为弹框状态.
+#   - "立即领取"按钮文字小且样式化, tesseract 常识别不出; 且实际未领取按钮为浅色
+#     中性色, 饱和度/亮度不能可靠区分 claimed/unclaimed. 因此弹框打开后, 只要没有
+#     命中已领取关键词, 一律视为 unclaimed, 由主流程点击后的状态变化来验证.
 popup_state() {
   local img="$1"
   [ -f "$img" ] || { echo none; return; }
 
-  local tsv
-  tsv=$(tesseract "$img" stdout --psm 11 -l chi_sim+eng tsv 2>/dev/null)
-
-  # --- 0) OCR 强信号: 全图出现"今日已领/已领取/领取成功/已签到" -> 直接 claimed ---
-  local ocr_claimed
-  ocr_claimed=$(echo "$tsv" | awk -F'\t' 'NF>=12 && $12 ~ /今日已领|已领取|领取成功|已签到/ {print "Y"; exit}')
-  if [ -n "$ocr_claimed" ]; then
-    diag "popup_state: OCR 命中已领取关键词 -> claimed"
-    echo claimed; return
+  # --- 0) 左侧卡片 OCR: 命中"今日已领/已领取/领取成功/已签到" -> claimed ---
+  # 限定区域避免对话区文字干扰. 新版(v5.3.5)卡片位于窗口左下角 y=600..800 CSS.
+  # 注意: tesseract 在 /tmp 下会报 Leptonica "image file not found", 故文件放 snapshot/.
+  local card_crop ocr_text
+  card_crop=$(mktemp "$SNAPSHOT_DIR/wb_card.XXXXXX.png")
+  local cw=$((280*SCALE)) ch=$((200*SCALE)) cx=0 cy=$((600*SCALE))
+  convert "$img" -crop "${cw}x${ch}+${cx}+${cy}" +repage "$card_crop" 2>/dev/null
+  if [ -s "$card_crop" ]; then
+    ocr_text=$(env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy tesseract "$card_crop" stdout --psm 11 -l chi_sim+eng 2>/dev/null)
+    if echo "$ocr_text" | grep -qE "今日已领|已领取|领取成功|已签到|已领\s*[0-9]+\s*天"; then
+      rm -f "$card_crop"
+      diag "popup_state: 左侧卡片 OCR 命中已领取关键词 -> claimed"
+      echo claimed; return
+    fi
   fi
+  rm -f "$card_crop"
 
   # --- 1) 弹框是否打开: 左下区域(窗口相对 x:0..420, y:600..800)差分 ---
   local pop_open=0
@@ -237,35 +263,10 @@ popup_state() {
     return
   fi
 
-  # --- 2) 已领取 vs 未领取: OCR"立即领取"优先, 否则按钮饱和度兜底 ---
-  local ocr_unclaimed
-  ocr_unclaimed=$(echo "$tsv" | awk -F'\t' 'NF>=12 && $12 ~ /立即领取/ {print "Y"; exit}')
-  if [ -n "$ocr_unclaimed" ]; then
-    diag "popup_state: OCR 命中'立即领取' -> unclaimed"
-    echo unclaimed; return
-  fi
-
-  local halfw=80 halfh=35
-  local bx0=$((BTN_REL_X-halfw)); [ "$bx0" -lt 0 ] && bx0=0
-  local by0=$((BTN_REL_Y-halfh)); [ "$by0" -lt 0 ] && by0=0
-  local bw=$((2*halfw*SCALE)) bh=$((2*halfh*SCALE)) box=$((bx0*SCALE)) boy=$((by0*SCALE))
-  local btn_crop smean smax sat_norm=0
-  btn_crop=$(mktemp -t wb_btn.XXXXXX.png)
-  convert "$img" -crop "${bw}x${bh}+${box}+${boy}" +repage "$btn_crop" 2>/dev/null
-  if [ -s "$btn_crop" ]; then
-    read -r smean smax < <(convert "$btn_crop" -colorspace HSL -channel G -separate \
-                            -format "%[mean] %[max]" info: 2>/dev/null)
-    smean=${smean:-0}; smax=${smax:-1}
-    sat_norm=$(awk -v m="$smean" -v x="$smax" 'BEGIN{ if (x+0==0) print 0; else printf "%.5f", m/x }')
-  fi
-  rm -f "$btn_crop"
-  diag "popup_state: 按钮饱和度(归一)=${sat_norm} (阈值${SAT_CLAIMED_TH}, >阈值=unclaimed)"
-
-  if awk "BEGIN{exit !($sat_norm > $SAT_CLAIMED_TH)}"; then
-    echo unclaimed   # 亮色"立即领取"按钮
-  else
-    echo claimed     # 灰色"今日已领"
-  fi
+  # --- 2) 弹框已打开且无已领取 OCR -> 视为 unclaimed ---
+  # 由主流程点击后再验证; 若实际已领取, 点击后仍保持 claimed/none, 验证阶段会正确成功.
+  diag "popup_state: 弹框已打开, 未命中已领取关键词 -> unclaimed"
+  echo unclaimed; return
 }
 
 # ---------- 主流程 ----------
@@ -280,27 +281,43 @@ main() {
   migrate_legacy
   log "窗口矩形: ${WIN_X}|${WIN_Y}|${WIN_W}|${WIN_H}  SCALE=$SCALE"
 
-  local ecx ecy bcx bcy before popup s0 after s1 s2 POPUP_CONFIRMED_OPEN=0
-  ecx=$((WIN_X+ENTRY_REL_X)); ecy=$((WIN_Y+ENTRY_REL_Y))
+  local ax ay ecx ecy bcx bcy before popup s0 after s1 s2 POPUP_CONFIRMED_OPEN=0
+  ax=$((WIN_X+AVATAR_REL_X)); ay=$((WIN_Y+AVATAR_REL_Y))
+  ecx=$((WIN_X+MENU_REL_X));  ecy=$((WIN_Y+MENU_REL_Y))
   bcx=$((WIN_X+BTN_REL_X));   bcy=$((WIN_Y+BTN_REL_Y))
-  log "头像点击 CG=($ecx,$ecy) [相对 $ENTRY_REL_X,$ENTRY_REL_Y]"
-  log "按钮点击 CG=($bcx,$bcy) [相对 $BTN_REL_X,$BTN_REL_Y]"
+  log "头像点击 CG=($ax,$ay) [相对 $AVATAR_REL_X,$AVATAR_REL_Y]"
+  log "Buddy 加油站点击 CG=($ecx,$ecy) [相对 $MENU_REL_X,$MENU_REL_Y]"
+  log "立即领取点击 CG=($bcx,$bcy) [相对 $BTN_REL_X,$BTN_REL_Y]"
 
   before="$SNAPSHOT_DIR/before_$(ts).png"; capture "$before"
   log "点击前截图: $before"
   POPUP_BASELINE="$before"   # 弹框关闭基线, 供 popup_state 差分对比
 
-  # 1) 打开弹框: 点击头像
+  # 0) 如果卡片已经打开并显示已领取, 直接成功(无需重复点击)
+  local s_baseline
+  s_baseline="$(popup_state "$before")"
+  log "初始弹框状态: $s_baseline"
+  if [ "$s_baseline" = "claimed" ]; then
+    log "卡片已打开且显示已领取, 无需重复操作"
+    log "=== 签到完成(今日已领) ==="; return 0
+  fi
+
+  # 1) 打开用户菜单: 点击左下角头像
+  click_cg "$ax" "$ay"; sleep 1.0
+
+  # 2) 打开签到卡片: 点击菜单内"Buddy 加油站"
   click_cg "$ecx" "$ecy"; sleep 1.3
   popup="$SNAPSHOT_DIR/popup_$(ts).png"; capture "$popup"
   s0="$(popup_state "$popup")"
-  log "弹框状态(点击头像后): $s0"
+  log "弹框状态(点击Buddy加油站后): $s0"
   case "$s0" in claimed|unclaimed) POPUP_CONFIRMED_OPEN=1;; esac
 
   if [ "$s0" = "none" ]; then
+    # 重试: 先点头像重新打开菜单, 再点 Buddy 加油站
+    click_cg "$ax" "$ay"; sleep 1.0
     click_cg "$ecx" "$ecy"; sleep 1.3
     capture "$popup"; s0="$(popup_state "$popup")"
-    log "重试打开弹框后状态: $s0"
+    log "重试打开卡片后状态: $s0"
     case "$s0" in claimed|unclaimed) POPUP_CONFIRMED_OPEN=1;; esac
   fi
 
@@ -337,7 +354,7 @@ main() {
     fi
     # 从头到尾弹框都没打开, 点击疑似未生效 -> 明确失败
     log "WARN: 弹框未打开, 点击疑似未生效, 签到可能未执行"
-    log "      请人工确认头像/按钮偏移, 或改用 WorkBuddy 定时任务(继承完整辅助功能权限)."
+    log "      请人工确认 Buddy 加油站/立即领取 偏移, 或改用 WorkBuddy 定时任务(继承完整辅助功能权限)."
     log "=== 签到失败(弹框未打开) ==="
     return 1
   fi
@@ -351,22 +368,22 @@ main() {
 # ---------- 校准子命令 ----------
 calibrate_entry() {
   load_offsets; discover_window
-  echo "[calibrate] 确保鼠标已悬停在 WorkBuddy 左下角用户头像上, 然后运行本命令(免回车)."
+  echo "[calibrate] 确保鼠标已悬停在 WorkBuddy 左侧\"Buddy 加油站\"菜单上, 然后运行本命令(免回车)."
   local cur ax ay
   cur=$("$WB_CLICK" -w)
   ax=$(echo "$cur" | cut -d',' -f1)
   ay=$(echo "$cur" | cut -d',' -f2)
-  ENTRY_REL_X=$((ax-WIN_X)); ENTRY_REL_Y=$((ay-WIN_Y))
-  if [ "$ENTRY_REL_X" -lt 0 ] || [ "$ENTRY_REL_Y" -lt 0 ] || [ "$ENTRY_REL_X" -gt "$WIN_W" ] || [ "$ENTRY_REL_Y" -gt "$WIN_H" ]; then
-    echo "WARN: 光标相对窗口($ENTRY_REL_X,$ENTRY_REL_Y)超出窗口范围, 请把鼠标移到窗口内头像上再运行"
+  MENU_REL_X=$((ax-WIN_X)); MENU_REL_Y=$((ay-WIN_Y))
+  if [ "$MENU_REL_X" -lt 0 ] || [ "$MENU_REL_Y" -lt 0 ] || [ "$MENU_REL_X" -gt "$WIN_W" ] || [ "$MENU_REL_Y" -gt "$WIN_H" ]; then
+    echo "WARN: 光标相对窗口($MENU_REL_X,$MENU_REL_Y)超出窗口范围, 请把鼠标移到窗口内头像上再运行"
     return 1
   fi
   save_offsets
-  echo "头像校准完成: 相对偏移($ENTRY_REL_X,$ENTRY_REL_Y) -> 当前窗口 CG($ax,$ay)"
+  echo "Buddy 加油站入口校准完成: 相对偏移($MENU_REL_X,$MENU_REL_Y) -> 当前窗口 CG($ax,$ay)"
 }
 calibrate_button() {
   load_offsets; discover_window
-  echo "请先点击头像打开签到弹框, 把鼠标悬停在'立即领取'按钮上, 然后运行本命令(免回车)."
+  echo "请先点击左侧\"Buddy 加油站\"打开签到卡片, 把鼠标悬停在'立即领取'按钮上, 然后运行本命令(免回车)."
   local cur bx by
   cur=$("$WB_CLICK" -w)
   bx=$(echo "$cur" | cut -d',' -f1)
@@ -384,24 +401,25 @@ calibrate_button() {
 debug_mode() {
   load_offsets; activate_workbuddy; sleep 0.8; discover_window; migrate_legacy
   echo "窗口矩形: ${WIN_X}|${WIN_Y}|${WIN_W}|${WIN_H}  SCALE=$SCALE"
-  echo "头像相对偏移: ($ENTRY_REL_X,$ENTRY_REL_Y) -> CG($(($WIN_X+$ENTRY_REL_X)),$(($WIN_Y+$ENTRY_REL_Y)))"
+  echo "Buddy加油站 相对偏移: ($MENU_REL_X,$MENU_REL_Y) -> CG($(($WIN_X+$MENU_REL_X)),$(($WIN_Y+$MENU_REL_Y)))"
   echo "按钮相对偏移: ($BTN_REL_X,$BTN_REL_Y) -> CG($(($WIN_X+$BTN_REL_X)),$(($WIN_Y+$BTN_REL_Y)))"
   local img="$SNAPSHOT_DIR/debug_$(ts).png"; capture "$img"
   echo "截图: $img"
   echo "弹框按钮状态: $(popup_state "$img")"
 }
 
-# ---------- 自动探测头像热区(自适应当前窗口) ----------
+# ---------- 自动探测"Buddy 加油站"菜单热区(自适应当前窗口) ----------
 probe_avatar() {
   load_offsets; activate_workbuddy; sleep 0.8; discover_window
-  # 建立关闭基线, 供 popup_state 差分判定弹框是否打开
+  # 建立关闭基线, 供 popup_state 差分判定卡片是否打开
   local base="$SNAPSHOT_DIR/probe_base_$(ts).png"; capture "$base"; POPUP_BASELINE="$base"
   local rx ry ax ay shot st hit=""
-  local xs=(20 40 60 80) ys=(700 720 740 760 780 795)
-  echo "[probe] 窗口矩形 ${WIN_X}|${WIN_Y}|${WIN_W}|${WIN_H}; 扫描左下角网格..."
+  # 扫描左侧"Buddy 加油站"菜单所在区域 (x: 0..200 CSS, y: 300..360 CSS)
+  local xs=(20 60 100 140 180) ys=(300 315 330 345 360)
+  echo "[probe] 窗口矩形 ${WIN_X}|${WIN_Y}|${WIN_W}|${WIN_H}; 扫描左侧 Buddy 加油站 网格..."
   for ry in "${ys[@]}"; do
     for rx in "${xs[@]}"; do
-      # 先点标题栏空白关闭可能已开的弹框
+      # 先点标题栏空白关闭可能已开的卡片
       click_cg $((WIN_X+WIN_W/2)) $((WIN_Y+30)); sleep 0.4
       ax=$((WIN_X+rx)); ay=$((WIN_Y+ry))
       click_cg "$ax" "$ay"; sleep 1.3
@@ -409,14 +427,14 @@ probe_avatar() {
       st="$(popup_state "$shot")"
       echo "尝试 窗口相对($rx,$ry) -> cg($ax,$ay) 状态=$st"
       if [ "$st" != "none" ]; then
-        hit=1; ENTRY_REL_X=$rx; ENTRY_REL_Y=$ry; save_offsets
-        echo ">>> 命中头像热区: 相对($rx,$ry) -> cg($ax,$ay), 已写入 .wbcheckin.offsets"
-        click_cg $((WIN_X+WIN_W/2)) $((WIN_Y+30)); sleep 0.4   # 关弹框
+        hit=1; MENU_REL_X=$rx; MENU_REL_Y=$ry; save_offsets
+        echo ">>> 命中 Buddy 加油站 热区: 相对($rx,$ry) -> cg($ax,$ay), 已写入 .wbcheckin.offsets"
+        click_cg $((WIN_X+WIN_W/2)) $((WIN_Y+30)); sleep 0.4   # 关卡片
         break 2
       fi
     done
   done
-  [ -z "$hit" ] && echo "未找到头像热区. 可能: (a) 手动 bash 缺辅助功能权限导致点击无效; (b) 头像在网格外. 建议改用 WorkBuddy 定时任务运行, 或 where-entry 人工校准."
+  [ -z "$hit" ] && echo "未找到 Buddy 加油站 热区. 可能: (a) 手动 bash 缺辅助功能权限导致点击无效; (b) 菜单在网格外. 建议改用 WorkBuddy 定时任务运行, 或 where-entry 人工校准."
 }
 
 # ---------- 入口 ----------
