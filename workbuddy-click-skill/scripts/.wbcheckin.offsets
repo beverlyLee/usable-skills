@@ -1,9 +1,15 @@
-# WorkBuddy 签到助手校准偏移 (相对窗口原点的偏移; 运行时 CG = 当前窗口原点 + 相对偏移)
-# 2026-07-30: 适配 v5.3.5 新版 UI
-#   流程: 1) 点击左下角头像打开用户菜单; 2) 点击菜单内"Buddy 加油站"; 3) 点击卡片"立即领取".
+# WorkBuddy 签到助手校准偏移 (v3: 归一化比例 NX/NY 为主, 兼容旧 *_REL_* 像素)
+# 运行时 CG = 窗口原点 + NX*WIN_W (或 NY*WIN_H), 自适应窗口尺寸/DPI.
+# REF 窗口 1200x800. BTN 已校正为 (75,706) 实测命中"立即领取"(原 80,730 偏下 24px 未点中).
+AVATAR_NX=0.0492
+AVATAR_NY=0.9488
+MENU_NX=0.0625
+MENU_NY=0.4125
+BTN_NX=0.0625
+BTN_NY=0.8825
 AVATAR_REL_X=59
 AVATAR_REL_Y=759
 MENU_REL_X=75
 MENU_REL_Y=330
-BTN_REL_X=80
-BTN_REL_Y=730
+BTN_REL_X=75
+BTN_REL_Y=706
