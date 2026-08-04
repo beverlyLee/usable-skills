@@ -10,6 +10,7 @@
 |---|---|---|
 | [`workbuddy-click-skill`](workbuddy-click-skill/) | macOS | WorkBuddy 桌面端每日自动签到领积分。打开「Buddy 加油站」抽屉 → 点击「立即领取」，内置相对坐标 + 图像判定 + 防假成功机制。 |
 | [`meituan-coupon-skill`](meituan-coupon-skill/) | Web/API | 美团 WorkBuddy 渠道每日自动领券（EDS Claw）。一键领券 + 每日定时（WorkBuddy 自动化）+ 登录态记忆 + 过期友好重登指引；登录态仅存本地，不含任何账号信息。 |
+| [`trae-work-cn-checkin`](trae-work-cn-checkin/) | macOS | Trae Work CN 桌面端每日自动签到。点击左下角用户名 → 弹出用户菜单 → 点击「签到」按钮；采用归一化相对坐标（抗窗口移动/缩放），并按 Window Server 窗口 ID 截图（避免拍到桌面），带严格防假成功判定。 |
 
 ---
 
