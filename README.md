@@ -11,7 +11,9 @@
 | [`workbuddy-click-skill`](workbuddy-click-skill/) | macOS | WorkBuddy 桌面端每日自动签到领积分。打开「Buddy 加油站」抽屉 → 点击「立即领取」，内置相对坐标 + 图像判定 + 防假成功机制。 |
 | [`meituan-coupon-skill`](meituan-coupon-skill/) | Web/API | 美团 WorkBuddy 渠道每日自动领券（EDS Claw）。一键领券 + 每日定时（WorkBuddy 自动化）+ 登录态记忆 + 过期友好重登指引；登录态仅存本地，不含任何账号信息。 |
 | [`trae-work-cn-checkin`](trae-work-cn-checkin/) | macOS | Trae Work CN 桌面端每日自动签到。点击左下角用户名 → 弹出用户菜单 → 点击「签到」按钮；采用归一化相对坐标（抗窗口移动/缩放），并按 Window Server 窗口 ID 截图（避免拍到桌面），带严格防假成功判定。 |
-| [`wechat-skills`](wechat-skills/) | Web/API + macOS | 微信公众号三件套：工具包（搜索/下载/洗稿/发布）、专业长文（刘润风格 + AI 封面）、Markdown 一键发草稿（wenyan-cli）。 |
+| [`wechat-toolkit`](wechat-toolkit/) | Web/API + macOS | 微信公众号工具包：话题搜索 → 文章下载 → AI 洗稿（事实兜底 + 去 AI 味 + 多图型规划 + mermaid 预渲染）→ 草稿发布。整条流水线的事实与去味标准来源。 |
+| [`wechat-article-pro`](wechat-article-pro/) | Web/API | 微信公众号专业长文：联网搜热点 + 刘润风格 3000–5000 字 + 后台 AI 封面 + 存草稿。内置写作铁律（事实兜底 / 去 AI 味 / 多图型 + mermaid 验证 / 质量门）。 |
+| [`wechat-publisher`](wechat-publisher/) | Web/API | 微信公众号一键发布：把带 frontmatter 的 Markdown 用 wenyan-cli 发到草稿箱（多主题、代码高亮、图片自动上传、mermaid/图表预渲染）。最薄的一层，只接「写好的 Markdown」。 |
 
 ---
 
