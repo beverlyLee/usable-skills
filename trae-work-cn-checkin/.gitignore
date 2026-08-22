@@ -1,0 +1,12 @@
+# ---- Runtime artifacts from the trae-work-cn-checkin skill ----
+# Generated every time the check-in script runs; must NOT be committed.
+snapshot/
+checkin.log
+
+# ---- macOS / editor junk ----
+.DS_Store
+*.swp
+
+# NOTE: the compiled binaries `scripts/wbclick` and `scripts/winfo`, plus the
+# calibration file `scripts/.traecheckin.offsets`, are intentional deliverables
+# and are NOT ignored — run `bash build.sh` to rebuild them on a new machine.
